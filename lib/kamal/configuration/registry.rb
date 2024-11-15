@@ -24,7 +24,16 @@ class Kamal::Configuration::Registry
   private
     def lookup(key)
       if registry_config[key].is_a?(Array)
-        secrets[registry_config[key].first]
+        secret = secrets[registry_config[key].first]
+        # Although the key is present, its value may be empty due to environment
+        # variable substitution. I.e. if it refers to an empty or unset env var.
+        unless secret.present?
+          raise Kamal::ConfigurationError, "The required secret " \
+            "'registry.#{key}' does not have a value. Did you forget to set " \
+            "its value with an environment variable or a secret helper?"
+        end
+
+        secret
       else
         registry_config[key]
       end
