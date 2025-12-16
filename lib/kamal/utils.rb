@@ -23,9 +23,21 @@ module Kamal::Utils
   # Returns a list of shell-dashed option arguments. If the value is true, it's treated like a value-less option.
   def optionize(args, with: nil, escape: true)
     options = if with
-      flatten_args(args).collect { |(key, value)| value == true ? "--#{key}" : "--#{key}#{with}#{escape ? escape_shell_value(value) : value}" }
+      flatten_args(args).collect { |(key, value)|
+        if value == true
+          "--#{key}"
+        else
+          "--#{key}#{with}#{escape ? escape_shell_value(value) : value}"
+        end
+      }
     else
-      flatten_args(args).collect { |(key, value)| [ "--#{key}", value == true ? nil : escape ? escape_shell_value(value) : value ] }
+      flatten_args(args).collect { |(key, value)|
+        [ "--#{key}", if value == true
+                       nil
+                      else
+                       escape ? escape_shell_value(value) : value
+                      end ]
+      }
     end
 
     options.flatten.compact
@@ -44,12 +56,11 @@ module Kamal::Utils
   end
 
   def redacted(value)
-    case
-    when value.respond_to?(:redaction)
+    if value.respond_to?(:redaction)
       value.redaction
-    when value.respond_to?(:transform_values)
+    elsif value.respond_to?(:transform_values)
       value.transform_values { |value| redacted value }
-    when value.respond_to?(:map)
+    elsif value.respond_to?(:map)
       value.map { |element| redacted element }
     else
       value
@@ -58,14 +69,14 @@ module Kamal::Utils
 
   # Escape a value to make it safe for shell use.
   def escape_shell_value(value)
-    value.to_s.scan(/[\x00-\x7F]+|[^\x00-\x7F]+/) \
+    value.to_s.scan(/[\x00-\x7F]+|[^\x00-\x7F]+/)
       .map { |part| part.ascii_only? ? escape_ascii_shell_value(part) : part }
       .join
   end
 
   def escape_ascii_shell_value(value)
     value.to_s.dump
-      .gsub(/`/, '\\\\`')
+      .gsub("`", '\\\\`')
       .gsub(DOLLAR_SIGN_WITHOUT_SHELL_EXPANSION_REGEX, '\$')
   end
 
@@ -102,6 +113,10 @@ module Kamal::Utils
     else
       arch
     end
+  end
+
+  def using_podman?
+    @using_podman ||= `docker --version 2>&1`.match?(/podman/i)
   end
 
   def older_version?(version, other_version)

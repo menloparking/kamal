@@ -3,6 +3,8 @@ require "test_helper"
 class CommandsBuilderTest < ActiveSupport::TestCase
   setup do
     @config = { service: "app", image: "dhh/app", registry: { "username" => "dhh", "password" => "secret" }, servers: [ "1.1.1.1" ], builder: { "arch" => "amd64" } }
+    # Default to Docker (not Podman) for most tests
+    Kamal::Utils.stubs(:using_podman?).returns(false)
   end
 
   test "target linux/amd64 locally by default" do
@@ -224,6 +226,34 @@ class CommandsBuilderTest < ActiveSupport::TestCase
     assert_equal \
       "docker buildx build --output=type=registry --platform linux/amd64 --builder kamal-local-docker-container -t dhh/app:123 -t dhh/app:latest --label service=\"app\" --file Dockerfile --no-cache . 2>&1",
       builder.push("registry", no_cache: true).join(" ")
+  end
+
+  test "push with podman uses docker output and manual push" do
+    Kamal::Utils.stubs(:using_podman?).returns(true)
+    builder = new_builder_command
+
+    assert_equal \
+      "docker buildx build --output=type=docker --platform linux/amd64 --builder kamal-local-docker-container -t dhh/app:123 -t dhh/app:latest --label service=\"app\" --file Dockerfile . 2>&1 && docker push dhh/app:123 2>&1 && docker push dhh/app:latest 2>&1",
+      builder.push.join(" ")
+  end
+
+  test "push with podman and dirty tags" do
+    Kamal::Utils.stubs(:using_podman?).returns(true)
+    builder = new_builder_command
+
+    assert_equal \
+      "docker buildx build --output=type=docker --platform linux/amd64 --builder kamal-local-docker-container -t dhh/app:123-dirty -t dhh/app:latest-dirty --label service=\"app\" --file Dockerfile . 2>&1 && docker push dhh/app:123-dirty 2>&1 && docker push dhh/app:latest-dirty 2>&1",
+      builder.push("registry", tag_as_dirty: true).join(" ")
+  end
+
+  test "push with podman respects non-registry export action" do
+    Kamal::Utils.stubs(:using_podman?).returns(true)
+    builder = new_builder_command
+
+    # When export_action is not "registry", don't use the workaround
+    assert_equal \
+      "docker buildx build --output=type=docker --platform linux/amd64 --builder kamal-local-docker-container -t dhh/app:123 -t dhh/app:latest --label service=\"app\" --file Dockerfile . 2>&1",
+      builder.push("docker").join(" ")
   end
 
   test "clone path with spaces" do

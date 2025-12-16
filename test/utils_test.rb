@@ -2,22 +2,22 @@ require "test_helper"
 
 class UtilsTest < ActiveSupport::TestCase
   test "argumentize" do
-    assert_equal [ "--label", "foo=\"\\`bar\\`\"", "--label", "baz=\"qux\"", "--label", :quux, "--label", "quuz=false" ], \
+    assert_equal [ "--label", "foo=\"\\`bar\\`\"", "--label", "baz=\"qux\"", "--label", :quux, "--label", "quuz=false" ],
       Kamal::Utils.argumentize("--label", { foo: "`bar`", baz: "qux", quux: nil, quuz: false })
   end
 
   test "argumentize with redacted" do
-    assert_kind_of SSHKit::Redaction, \
+    assert_kind_of SSHKit::Redaction,
       Kamal::Utils.argumentize("--label", { foo: "bar" }, sensitive: true).last
   end
 
   test "optionize" do
-    assert_equal [ "--foo", "\"bar\"", "--baz", "\"qux\"", "--quux" ], \
+    assert_equal [ "--foo", "\"bar\"", "--baz", "\"qux\"", "--quux" ],
       Kamal::Utils.optionize({ foo: "bar", baz: "qux", quux: true })
   end
 
   test "optionize with" do
-    assert_equal [ "--foo=\"bar\"", "--baz=\"qux\"", "--quux" ], \
+    assert_equal [ "--foo=\"bar\"", "--baz=\"qux\"", "--quux" ],
       Kamal::Utils.optionize({ foo: "bar", baz: "qux", quux: true }, with: "=")
   end
 
@@ -51,5 +51,23 @@ class UtilsTest < ActiveSupport::TestCase
       Kamal::Utils.escape_shell_value("^(https?://)www.example.com/(.*)$")
     assert_equal "\"https://example.com/\\$2\"",
       Kamal::Utils.escape_shell_value("https://example.com/$2")
+  end
+
+  test "using_podman? detects podman" do
+    Kamal::Utils.instance_variable_set(:@using_podman, nil)
+    Kamal::Utils.stubs(:`).with("docker --version 2>&1").returns("podman version 5.0.0")
+
+    assert Kamal::Utils.using_podman?
+  ensure
+    Kamal::Utils.instance_variable_set(:@using_podman, nil)
+  end
+
+  test "using_podman? detects docker" do
+    Kamal::Utils.instance_variable_set(:@using_podman, nil)
+    Kamal::Utils.stubs(:`).with("docker --version 2>&1").returns("Docker version 24.0.0")
+
+    assert_not Kamal::Utils.using_podman?
+  ensure
+    Kamal::Utils.instance_variable_set(:@using_podman, nil)
   end
 end

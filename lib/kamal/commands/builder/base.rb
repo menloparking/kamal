@@ -15,6 +15,20 @@ class Kamal::Commands::Builder::Base < Kamal::Commands::Base
   end
 
   def push(export_action = "registry", tag_as_dirty: false, no_cache: false)
+    # Podman's buildx emulation doesn't support --output=type=registry properly
+    # It builds but doesn't push. Use docker output type + manual push instead.
+    if using_podman? && export_action == "registry"
+      commands = [
+        build_command(export_action: "docker", tag_as_dirty: tag_as_dirty, no_cache: no_cache),
+        *push_tags(tag_as_dirty: tag_as_dirty)
+      ]
+      combine(*commands)
+    else
+      build_command(export_action: export_action, tag_as_dirty: tag_as_dirty, no_cache: no_cache)
+    end
+  end
+
+  def build_command(export_action:, tag_as_dirty: false, no_cache: false)
     docker :buildx, :build,
       "--output=type=#{export_action}",
       *platform_options(arches),
@@ -24,6 +38,12 @@ class Kamal::Commands::Builder::Base < Kamal::Commands::Base
       *([ "--no-cache" ] if no_cache),
       build_context,
       "2>&1"
+  end
+
+  def push_tags(tag_as_dirty: false)
+    build_tag_names(tag_as_dirty: tag_as_dirty).map do |tag|
+      docker :push, tag, "2>&1"
+    end
   end
 
   def pull
@@ -70,74 +90,79 @@ class Kamal::Commands::Builder::Base < Kamal::Commands::Base
   end
 
   private
-    def build_tag_names(tag_as_dirty: false)
-      tag_names = [ config.absolute_image, config.latest_image ]
-      tag_names.map! { |t| "#{t}-dirty" } if tag_as_dirty
-      tag_names
-    end
 
-    def build_tag_options(tag_as_dirty: false)
-      build_tag_names(tag_as_dirty: tag_as_dirty).flat_map { |name| [ "-t", name ] }
-    end
+  def using_podman?
+    Kamal::Utils.using_podman?
+  end
 
-    def build_cache
-      if cache_to && cache_from
-        [ "--cache-to", cache_to,
-          "--cache-from", cache_from ]
-      end
-    end
+  def build_tag_names(tag_as_dirty: false)
+    tag_names = [ config.absolute_image, config.latest_image ]
+    tag_names.map! { |t| "#{t}-dirty" } if tag_as_dirty
+    tag_names
+  end
 
-    def build_labels
-      argumentize "--label", { service: config.service }
-    end
+  def build_tag_options(tag_as_dirty: false)
+    build_tag_names(tag_as_dirty: tag_as_dirty).flat_map { |name| [ "-t", name ] }
+  end
 
-    def build_args
-      argumentize "--build-arg", args, sensitive: true
+  def build_cache
+    if cache_to && cache_from
+      [ "--cache-to", cache_to,
+        "--cache-from", cache_from ]
     end
+  end
 
-    def build_secrets
-      argumentize "--secret", secrets.keys.collect { |secret| [ "id", secret ] }
-    end
+  def build_labels
+    argumentize "--label", { service: config.service }
+  end
 
-    def build_dockerfile
-      if Pathname.new(File.expand_path(dockerfile)).exist?
-        argumentize "--file", dockerfile
-      else
-        raise BuilderError, "Missing #{dockerfile}"
-      end
-    end
+  def build_args
+    argumentize "--build-arg", args, sensitive: true
+  end
 
-    def build_target
-      argumentize "--target", target if target.present?
-    end
+  def build_secrets
+    argumentize "--secret", secrets.keys.collect { |secret| [ "id", secret ] }
+  end
 
-    def build_ssh
-      argumentize "--ssh", ssh if ssh.present?
+  def build_dockerfile
+    if Pathname.new(File.expand_path(dockerfile)).exist?
+      argumentize "--file", dockerfile
+    else
+      raise BuilderError, "Missing #{dockerfile}"
     end
+  end
 
-    def builder_provenance
-      argumentize "--provenance", provenance unless provenance.nil?
-    end
+  def build_target
+    argumentize "--target", target if target.present?
+  end
 
-    def builder_sbom
-      argumentize "--sbom", sbom unless sbom.nil?
-    end
+  def build_ssh
+    argumentize "--ssh", ssh if ssh.present?
+  end
 
-    def builder_config
-      config.builder
-    end
+  def builder_provenance
+    argumentize "--provenance", provenance unless provenance.nil?
+  end
 
-    def registry_config
-      config.registry
-    end
+  def builder_sbom
+    argumentize "--sbom", sbom unless sbom.nil?
+  end
 
-    def driver_options
-      if registry_config.local?
-        [ "--driver-opt", "network=host" ]
-      end
-    end
+  def builder_config
+    config.builder
+  end
 
-    def platform_options(arches)
-      argumentize "--platform", arches.map { |arch| "linux/#{arch}" }.join(",") if arches.any?
+  def registry_config
+    config.registry
+  end
+
+  def driver_options
+    if registry_config.local?
+      [ "--driver-opt", "network=host" ]
     end
+  end
+
+  def platform_options(arches)
+    argumentize "--platform", arches.map { |arch| "linux/#{arch}" }.join(",") if arches.any?
+  end
 end
