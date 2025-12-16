@@ -139,6 +139,22 @@ class Kamal::Configuration::Builder
     Kamal::Git.used? && builder_config["context"].nil?
   end
 
+  def git_clone_options
+    @git_clone_options ||= builder_config.fetch("git", {})
+  end
+
+  def git_clone_recurse_submodules?
+    git_clone_options.fetch("recurse_submodules", true)
+  end
+
+  def git_clone_shallow_submodules?
+    git_clone_options.fetch("shallow_submodules", false)
+  end
+
+  def git_clone_depth
+    git_clone_options["depth"]
+  end
+
   def clone_directory
     @clone_directory ||= File.join Dir.tmpdir, "kamal-clones", [ service, pwd_sha ].compact.join("-")
   end
@@ -157,62 +173,63 @@ class Kamal::Configuration::Builder
   end
 
   private
-    def valid?
-      if docker_driver?
-        raise ArgumentError, "Invalid builder configuration: the `docker` driver does not not support remote builders" if remote
-        raise ArgumentError, "Invalid builder configuration: the `docker` driver does not not support caching" if cached?
-        raise ArgumentError, "Invalid builder configuration: the `docker` driver does not not support multiple arches" if arches.many?
-      end
 
-      if @options["cache"] && @options["cache"]["type"]
-        raise ArgumentError, "Invalid cache type: #{@options["cache"]["type"]}" unless [ "gha", "registry" ].include?(@options["cache"]["type"])
-      end
+  def valid?
+    if docker_driver?
+      raise ArgumentError, "Invalid builder configuration: the `docker` driver does not not support remote builders" if remote
+      raise ArgumentError, "Invalid builder configuration: the `docker` driver does not not support caching" if cached?
+      raise ArgumentError, "Invalid builder configuration: the `docker` driver does not not support multiple arches" if arches.many?
     end
 
-    def cache_image
-      builder_config["cache"]&.fetch("image", nil) || "#{image}-build-cache"
+    if @options["cache"] && @options["cache"]["type"]
+      raise ArgumentError, "Invalid cache type: #{@options["cache"]["type"]}" unless [ "gha", "registry" ].include?(@options["cache"]["type"])
     end
+  end
 
-    def cache_image_ref
-      [ server, cache_image ].compact.join("/")
-    end
+  def cache_image
+    builder_config["cache"]&.fetch("image", nil) || "#{image}-build-cache"
+  end
 
-    def cache_options
-      builder_config["cache"]&.fetch("options", nil)
-    end
+  def cache_image_ref
+    [ server, cache_image ].compact.join("/")
+  end
 
-    def cache_from_config_for_gha
-      individual_options = cache_options&.split(",") || []
-      allowed_options = individual_options.select { |option| option =~ /^(url|url_v2|token|scope|timeout)=/ }
+  def cache_options
+    builder_config["cache"]&.fetch("options", nil)
+  end
 
-      [ "type=gha", *allowed_options ].compact.join(",")
-    end
+  def cache_from_config_for_gha
+    individual_options = cache_options&.split(",") || []
+    allowed_options = individual_options.select { |option| option =~ /^(url|url_v2|token|scope|timeout)=/ }
 
-    def cache_from_config_for_registry
-      [ "type=registry", "ref=#{cache_image_ref}" ].compact.join(",")
-    end
+    [ "type=gha", *allowed_options ].compact.join(",")
+  end
 
-    def cache_to_config_for_gha
-      [ "type=gha", cache_options ].compact.join(",")
-    end
+  def cache_from_config_for_registry
+    [ "type=registry", "ref=#{cache_image_ref}" ].compact.join(",")
+  end
 
-    def cache_to_config_for_registry
-      [ "type=registry", "ref=#{cache_image_ref}", cache_options ].compact.join(",")
-    end
+  def cache_to_config_for_gha
+    [ "type=gha", cache_options ].compact.join(",")
+  end
 
-    def repo_basename
-      File.basename(Kamal::Git.root)
-    end
+  def cache_to_config_for_registry
+    [ "type=registry", "ref=#{cache_image_ref}", cache_options ].compact.join(",")
+  end
 
-    def repo_relative_pwd
-      Dir.pwd.delete_prefix(Kamal::Git.root)
-    end
+  def repo_basename
+    File.basename(Kamal::Git.root)
+  end
 
-    def pwd_sha
-      Digest::SHA256.hexdigest(Dir.pwd)[0..12]
-    end
+  def repo_relative_pwd
+    Dir.pwd.delete_prefix(Kamal::Git.root)
+  end
 
-    def default_arch
-      docker_driver? ? [] : [ "amd64", "arm64" ]
-    end
+  def pwd_sha
+    Digest::SHA256.hexdigest(Dir.pwd)[0..12]
+  end
+
+  def default_arch
+    docker_driver? ? [] : [ "amd64", "arm64" ]
+  end
 end

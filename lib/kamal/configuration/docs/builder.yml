@@ -62,6 +62,19 @@ builder:
   # To use the local checkout instead, you can set the context to `.`, or a path to another directory.
   context: .
 
+  # Git clone options
+  #
+  # Configure how Kamal clones your repository for builds when context is not set.
+  #
+  # By default, Kamal clones with --recurse-submodules. You can disable this or add depth limiting:
+  git:
+    # Whether to recursively clone submodules (defaults to true)
+    recurse_submodules: false
+    # Limit clone depth for faster cloning (optional, no default)
+    depth: 1
+    # Use shallow clones for submodules (defaults to false, only applies when recurse_submodules is true)
+    shallow_submodules: true
+
   # Dockerfile
   #
   # The Dockerfile to use for building, defaults to `Dockerfile`:
@@ -114,10 +127,10 @@ builder:
   # Driver
   #
   # The build driver to use, defaults to `docker-container`:
-  driver: docker
+  driver: docker-container
   #
-  # If you want to use Docker Build Cloud (https://www.docker.com/products/build-cloud/), you can set the driver to:
-  driver: cloud org-name/builder-name
+  # If you want to use Docker Build Cloud (https://www.docker.com/products/build-cloud/), you can also use:
+  # driver: cloud org-name/builder-name
 
   # Provenance
   #

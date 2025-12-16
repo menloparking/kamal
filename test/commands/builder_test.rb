@@ -74,7 +74,7 @@ class CommandsBuilderTest < ActiveSupport::TestCase
 
     assert_equal \
       "pack build dhh/app --platform linux/amd64 --creation-time now --builder heroku/builder:24 --buildpack heroku/ruby --buildpack heroku/procfile --buildpack paketo-buildpacks/image-labels -t dhh/app:123 -t dhh/app:latest --env BP_IMAGE_LABELS=service=app --env a=\"1\" --env b=\"2\" --path . && docker push dhh/app:123 && docker push dhh/app:latest",
-    builder.push.join(" ")
+      builder.push.join(" ")
   end
 
   test "pack build with no cache" do
@@ -82,7 +82,7 @@ class CommandsBuilderTest < ActiveSupport::TestCase
 
     assert_equal \
       "pack build dhh/app --platform linux/amd64 --creation-time now --builder heroku/builder:24 --buildpack heroku/ruby --buildpack heroku/procfile --buildpack paketo-buildpacks/image-labels -t dhh/app:123 -t dhh/app:latest --clear-cache --env BP_IMAGE_LABELS=service=app --env a=\"1\" --env b=\"2\" --path . && docker push dhh/app:123 && docker push dhh/app:latest",
-    builder.push("registry", no_cache: true).join(" ")
+      builder.push("registry", no_cache: true).join(" ")
   end
 
   test "pack build secrets as env" do
@@ -91,7 +91,7 @@ class CommandsBuilderTest < ActiveSupport::TestCase
 
       assert_equal \
         "pack build dhh/app --platform linux/amd64 --creation-time now --builder heroku/builder:24 --buildpack heroku/ruby --buildpack heroku/procfile --buildpack paketo-buildpacks/image-labels -t dhh/app:123 -t dhh/app:latest --env BP_IMAGE_LABELS=service=app --env token_a=\"foo\" --env token_b=\"bar\" --path . && docker push dhh/app:123 && docker push dhh/app:latest",
-      builder.push.join(" ")
+        builder.push.join(" ")
     end
   end
 
@@ -241,6 +241,79 @@ class CommandsBuilderTest < ActiveSupport::TestCase
     end
   end
 
+  test "clone with default options includes recurse-submodules" do
+    command = new_builder_command
+    clone_command = command.clone.join(" ")
+
+    assert_match(/--recurse-submodules/, clone_command)
+    assert_no_match(/--depth/, clone_command)
+  end
+
+  test "clone without recurse_submodules" do
+    command = new_builder_command(builder: { "git" => { "recurse_submodules" => false } })
+    clone_command = command.clone.join(" ")
+
+    assert_no_match(/--recurse-submodules/, clone_command)
+  end
+
+  test "clone with depth option" do
+    command = new_builder_command(builder: { "git" => { "depth" => 1 } })
+    clone_command = command.clone.join(" ")
+
+    assert_match(/--depth 1/, clone_command)
+    assert_match(/--recurse-submodules/, clone_command)
+  end
+
+  test "clone with both git options" do
+    command = new_builder_command(builder: { "git" => { "recurse_submodules" => false, "depth" => 5 } })
+    clone_command = command.clone.join(" ")
+
+    assert_match(/--depth 5/, clone_command)
+    assert_no_match(/--recurse-submodules/, clone_command)
+  end
+
+  test "clone with shallow_submodules" do
+    command = new_builder_command(builder: { "git" => { "shallow_submodules" => true } })
+    clone_command = command.clone.join(" ")
+
+    assert_match(/--recurse-submodules/, clone_command)
+    assert_match(/--shallow-submodules/, clone_command)
+  end
+
+  test "clone with shallow_submodules when recurse_submodules is false" do
+    command = new_builder_command(builder: { "git" => { "recurse_submodules" => false, "shallow_submodules" => true } })
+    clone_command = command.clone.join(" ")
+
+    assert_no_match(/--recurse-submodules/, clone_command)
+    assert_no_match(/--shallow-submodules/, clone_command)
+  end
+
+  test "clone_reset_steps includes submodule update by default" do
+    command = new_builder_command
+    clone_reset_commands = command.clone_reset_steps.map { |a| a.join(" ") }
+    submodule_update_command = clone_reset_commands.find { |cmd| cmd.include?("submodule") }
+
+    assert_not_nil submodule_update_command
+    assert_match(/submodule update --init/, submodule_update_command)
+  end
+
+  test "clone_reset_steps excludes submodule update when recurse_submodules is false" do
+    command = new_builder_command(builder: { "git" => { "recurse_submodules" => false } })
+    clone_reset_commands = command.clone_reset_steps.map { |a| a.join(" ") }
+    submodule_update_command = clone_reset_commands.find { |cmd| cmd.include?("submodule") }
+
+    assert_nil submodule_update_command
+  end
+
+  test "clone_reset_steps includes depth for submodules when shallow_submodules is true" do
+    command = new_builder_command(builder: { "git" => { "shallow_submodules" => true } })
+    clone_reset_commands = command.clone_reset_steps.map { |a| a.join(" ") }
+    submodule_update_command = clone_reset_commands.find { |cmd| cmd.include?("submodule") }
+
+    assert_not_nil submodule_update_command
+    assert_match(/submodule update --init --depth 1/, submodule_update_command)
+  end
+
   test "local builder with local registry includes network host driver option" do
     builder = new_builder_command(registry: { "server" => "localhost:5000" })
     assert_equal "local", builder.name
@@ -272,19 +345,20 @@ class CommandsBuilderTest < ActiveSupport::TestCase
   end
 
   private
-    def new_builder_command(additional_config = {})
-      Kamal::Configuration.new(@config.deep_merge(additional_config), version: "123").then do |config|
-        KAMAL.reset
-        KAMAL.stubs(:config).returns(config)
-        Kamal::Commands::Builder.new(config)
-      end
-    end
 
-    def local_arch
-      Kamal::Utils.docker_arch
+  def new_builder_command(additional_config = {})
+    Kamal::Configuration.new(@config.deep_merge(additional_config), version: "123").then do |config|
+      KAMAL.reset
+      KAMAL.stubs(:config).returns(config)
+      Kamal::Commands::Builder.new(config)
     end
+  end
 
-    def remote_arch
-      Kamal::Utils.docker_arch == "arm64" ? "amd64" : "arm64"
-    end
+  def local_arch
+    Kamal::Utils.docker_arch
+  end
+
+  def remote_arch
+    (Kamal::Utils.docker_arch == "arm64") ? "amd64" : "arm64"
+  end
 end

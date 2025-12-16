@@ -188,8 +188,75 @@ class ConfigurationBuilderTest < ActiveSupport::TestCase
     assert_equal [ "amd64", "arm64" ], config.builder.remote_arches
   end
 
-  private
-    def config
-      Kamal::Configuration.new(@deploy)
+  test "git clone options defaults" do
+    assert_equal true, config.builder.git_clone_recurse_submodules?
+    assert_nil config.builder.git_clone_depth
+  end
+
+  test "setting git clone recurse_submodules to false" do
+    @deploy[:builder]["git"] = { "recurse_submodules" => false }
+
+    assert_equal false, config.builder.git_clone_recurse_submodules?
+  end
+
+  test "setting git clone depth" do
+    @deploy[:builder]["git"] = { "depth" => 1 }
+
+    assert_equal 1, config.builder.git_clone_depth
+  end
+
+  test "setting both git clone options" do
+    @deploy[:builder]["git"] = { "recurse_submodules" => false, "depth" => 5 }
+
+    assert_equal false, config.builder.git_clone_recurse_submodules?
+    assert_equal 5, config.builder.git_clone_depth
+  end
+
+  test "git clone shallow_submodules defaults to false" do
+    assert_equal false, config.builder.git_clone_shallow_submodules?
+  end
+
+  test "setting git clone shallow_submodules to true" do
+    @deploy[:builder]["git"] = { "shallow_submodules" => true }
+
+    assert_equal true, config.builder.git_clone_shallow_submodules?
+  end
+
+  test "invalid git clone depth raises error" do
+    @deploy[:builder]["git"] = { "depth" => -1 }
+
+    assert_raises(Kamal::ConfigurationError) do
+      config.builder
     end
+  end
+
+  test "invalid git clone depth type raises error" do
+    @deploy[:builder]["git"] = { "depth" => "1" }
+
+    assert_raises(Kamal::ConfigurationError) do
+      config.builder
+    end
+  end
+
+  test "invalid git clone recurse_submodules type raises error" do
+    @deploy[:builder]["git"] = { "recurse_submodules" => "true" }
+
+    assert_raises(Kamal::ConfigurationError) do
+      config.builder
+    end
+  end
+
+  test "invalid git clone shallow_submodules type raises error" do
+    @deploy[:builder]["git"] = { "shallow_submodules" => "true" }
+
+    assert_raises(Kamal::ConfigurationError) do
+      config.builder
+    end
+  end
+
+  private
+
+  def config
+    Kamal::Configuration.new(@deploy)
+  end
 end
